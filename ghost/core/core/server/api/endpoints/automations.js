@@ -43,13 +43,13 @@ const controller = {
                 updated_at: '2026-05-05T00:00:00.000Z',
                 actions: [{
                     id: '67f3f3f3f3f3f3f3f3f3f3f4',
-                    type: 'delay',
+                    type: 'wait',
                     data: {
-                        delay_hours: 24
+                        wait_hours: 24
                     }
                 }, {
                     id: '67f3f3f3f3f3f3f3f3f3f3f5',
-                    type: 'send email',
+                    type: 'send_email',
                     data: {
                         email_subject: 'Welcome!',
                         email_lexical: '{"root":{"children":[]}}',
