@@ -91,12 +91,15 @@ describe('Migrations', function () {
         // Custom assertion to wrap all permissions
         function assertCompletePermissions(permissions) {
             // If you have to change this number, please add the relevant `assertHavePermission` checks below
-            assert.equal(permissions.length, 135);
+            assert.equal(permissions.length, 137);
 
             assertHavePermission(permissions, 'Export database', ['Administrator', 'DB Backup Integration']);
             assertHavePermission(permissions, 'Import database', ['Administrator', 'Self-Serve Migration Integration', 'DB Backup Integration']);
             assertHavePermission(permissions, 'Delete all content', ['Administrator', 'DB Backup Integration']);
             assertHavePermission(permissions, 'Backup database', ['Administrator', 'DB Backup Integration']);
+
+            assertHavePermission(permissions, 'Rotate all API keys', ['Administrator']);
+            assertHavePermission(permissions, 'Reset staff passwords', []);
 
             assertHavePermission(permissions, 'Send mail', ['Administrator', 'Admin Integration']);
 
