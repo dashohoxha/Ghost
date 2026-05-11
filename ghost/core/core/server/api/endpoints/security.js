@@ -42,10 +42,11 @@ const controller = {
             cacheInvalidate: false
         },
         async permissions(frame) {
-            // Owner-only: granting "all" permissions on this resource via
-            // can-this is short-circuited for the Owner role; assigning the
-            // Owner role itself requires owner privilege already, so we
-            // re-use that permission check as a stand-in.
+            // Owner-only — same pattern as transferOwnership in users.js:
+            // assigning the Owner role itself requires owner privilege, so
+            // we re-use that permission check as the gate. No dedicated
+            // resetStaffPasswords permission row is registered (Ghost
+            // convention for owner-only actions).
             const ownerRole = await models.Role.findOne({name: 'Owner'});
             try {
                 await permissionsService.canThis(frame.options.context).assign.role(ownerRole);

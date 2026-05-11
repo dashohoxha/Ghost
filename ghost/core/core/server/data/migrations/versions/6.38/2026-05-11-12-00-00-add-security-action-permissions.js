@@ -1,5 +1,10 @@
 const {combineTransactionalMigrations, addPermissionWithRoles} = require('../../utils');
 
+// "Reset staff passwords" is intentionally not defined as a permission —
+// it's an owner-only action, gated in the endpoint via the existing
+// `assign.role(Owner)` permission check (same pattern as transferOwnership).
+// Following the Ghost convention of not registering permission rows for
+// owner-only actions.
 module.exports = combineTransactionalMigrations(
     addPermissionWithRoles({
         name: 'Rotate all API keys',
@@ -7,14 +12,5 @@ module.exports = combineTransactionalMigrations(
         object: 'security_action'
     }, [
         'Administrator'
-    ]),
-    addPermissionWithRoles({
-        name: 'Reset staff passwords',
-        action: 'resetStaffPasswords',
-        object: 'security_action'
-    }, [
-        // Owner is granted implicitly via the can-this short-circuit;
-        // we still register the permission row for visibility, but no
-        // role is granted (the endpoint enforces Owner-only at request time).
     ])
 );
