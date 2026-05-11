@@ -151,5 +151,9 @@ module.exports = {
 
     get featurebase() {
         return require('./featurebase');
+    },
+
+    get security_action() {
+        return require('./security');
     }
 };

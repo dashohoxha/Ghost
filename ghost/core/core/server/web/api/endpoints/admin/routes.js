@@ -306,6 +306,9 @@ module.exports = function apiRoutes() {
     router.get('/authentication/setup', http(api.authentication.isSetup));
     router.post('/authentication/global_password_reset', mw.authAdminApi, http(api.authentication.resetAllPasswords));
 
+    // ## Security actions (Settings -> Advanced -> Danger Zone)
+    router.post('/security/rotate_api_keys', mw.authAdminApi, http(api.security.rotateApiKeys));
+
     // ## Images
     router.post('/images/upload',
         mw.authAdminApi,

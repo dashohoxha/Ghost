@@ -245,6 +245,10 @@ module.exports = {
         return apiFramework.pipeline(require('./search-index'), localUtils);
     },
 
+    get security() {
+        return apiFramework.pipeline(require('./security'), localUtils);
+    },
+
     /**
      * Content API Controllers
      *

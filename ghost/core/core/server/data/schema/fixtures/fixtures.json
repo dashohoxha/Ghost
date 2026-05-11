@@ -635,6 +635,11 @@
                     "object_type": "authentication"
                 },
                 {
+                    "name": "Rotate all API keys",
+                    "action_type": "rotateApiKeys",
+                    "object_type": "security_action"
+                },
+                {
                     "name": "Browse custom theme settings",
                     "action_type": "browse",
                     "object_type": "custom_theme_setting"
@@ -958,6 +963,7 @@
                     "custom_theme_setting": "all",
                     "offer": "all",
                     "authentication": "resetAllPasswords",
+                    "security_action": "rotateApiKeys",
                     "members_stripe_connect": "auth",
                     "newsletter": "all",
                     "explore": "read",
