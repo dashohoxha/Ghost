@@ -25,7 +25,12 @@ export class DangerZoneSection extends BasePage {
 
         this.urlConfirmationModal = page.getByTestId('url-confirmation-modal');
         this.urlConfirmationInput = page.getByTestId('url-confirmation-input');
-        this.urlConfirmationOkButton = this.urlConfirmationModal.getByRole('button').last();
+        // Matches the OK button of either danger-zone action by accessible
+        // name rather than DOM order. Add new okLabel values here when more
+        // destructive actions are added behind this same modal.
+        this.urlConfirmationOkButton = this.urlConfirmationModal.getByRole('button', {
+            name: /^(Rotate API keys|Reset all staff passwords)$/
+        });
     }
 
     async openRotateApiKeysModal() {
