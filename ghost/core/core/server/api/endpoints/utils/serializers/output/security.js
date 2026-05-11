@@ -10,5 +10,16 @@ module.exports = {
                 count: response?.count ?? 0
             }]
         };
+    },
+
+    resetStaffPasswords(response, apiConfig, frame) {
+        debug('resetStaffPasswords');
+
+        frame.response = {
+            security_action: [{
+                action: 'reset_staff_passwords',
+                count: response?.count ?? 0
+            }]
+        };
     }
 };

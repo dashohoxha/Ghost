@@ -7,11 +7,12 @@ import {useDeleteAllContent} from '@tryghost/admin-x-framework/api/db';
 import {useGlobalData} from '../../providers/global-data-provider';
 import {useHandleError} from '@tryghost/admin-x-framework/hooks';
 import {useQueryClient} from '@tryghost/admin-x-framework';
-import {useRotateApiKeys} from '@tryghost/admin-x-framework/api/security';
+import {useResetStaffPasswords, useRotateApiKeys} from '@tryghost/admin-x-framework/api/security';
 
 const DangerZone: React.FC<{ keywords: string[] }> = ({keywords}) => {
     const {mutateAsync: deleteAllContent} = useDeleteAllContent();
     const {mutateAsync: rotateApiKeys} = useRotateApiKeys();
+    const {mutateAsync: resetStaffPasswords} = useResetStaffPasswords();
     const client = useQueryClient();
     const handleError = useHandleError();
     const {siteData, config} = useGlobalData();
@@ -82,6 +83,43 @@ const DangerZone: React.FC<{ keywords: string[] }> = ({keywords}) => {
         });
     };
 
+    const handleResetStaffPasswords = () => {
+        NiceModal.show(UrlConfirmationModal, {
+            title: 'Reset every staff password?',
+            prompt: (
+                <>
+                    Every Owner, Administrator, Editor, and Author on this site will receive a password reset email and be
+                    locked out until they finish the reset. <strong>You will be signed out immediately</strong> and must
+                    reset your own password through the email you receive.
+                </>
+            ),
+            confirmationValue: siteUrl,
+            okLabel: 'Reset all staff passwords',
+            okRunningLabel: 'Resetting...',
+            okColor: 'red',
+            onOk: async (modal) => {
+                try {
+                    const response = await resetStaffPasswords(null);
+                    const count = response?.security_action?.[0]?.count ?? 0;
+                    showToast({
+                        title: count === 1
+                            ? 'Password reset email sent to 1 staff user. You will be signed out shortly.'
+                            : `Password reset emails sent to ${count} staff users. You will be signed out shortly.`,
+                        type: 'success'
+                    });
+                    modal?.remove();
+                    // The server has just invalidated every session including ours;
+                    // force a navigation so the user lands on the signin page.
+                    window.setTimeout(() => {
+                        window.location.assign('/ghost/signin/');
+                    }, 1500);
+                } catch (e) {
+                    handleError(e);
+                }
+            }
+        });
+    };
+
     return (
         <TopLevelGroup
             customHeader={
@@ -94,12 +132,20 @@ const DangerZone: React.FC<{ keywords: string[] }> = ({keywords}) => {
             <div className='flex flex-col items-start gap-3'>
                 <Button color='red' label='Delete all content' onClick={handleDeleteAllContent} />
                 {securityActionsEnabled && (
-                    <Button
-                        color='red'
-                        label='Rotate API keys'
-                        testId='rotate-api-keys-button'
-                        onClick={handleRotateApiKeys}
-                    />
+                    <>
+                        <Button
+                            color='red'
+                            label='Rotate API keys'
+                            testId='rotate-api-keys-button'
+                            onClick={handleRotateApiKeys}
+                        />
+                        <Button
+                            color='red'
+                            label='Reset all staff passwords'
+                            testId='reset-staff-passwords-button'
+                            onClick={handleResetStaffPasswords}
+                        />
+                    </>
                 )}
             </div>
         </TopLevelGroup>

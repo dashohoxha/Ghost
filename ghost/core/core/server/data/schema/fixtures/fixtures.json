@@ -640,6 +640,11 @@
                     "object_type": "security_action"
                 },
                 {
+                    "name": "Reset staff passwords",
+                    "action_type": "resetStaffPasswords",
+                    "object_type": "security_action"
+                },
+                {
                     "name": "Browse custom theme settings",
                     "action_type": "browse",
                     "object_type": "custom_theme_setting"

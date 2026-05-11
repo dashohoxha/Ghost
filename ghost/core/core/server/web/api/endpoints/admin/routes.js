@@ -308,6 +308,7 @@ module.exports = function apiRoutes() {
 
     // ## Security actions (Settings -> Advanced -> Danger Zone)
     router.post('/security/rotate_api_keys', mw.authAdminApi, http(api.security.rotateApiKeys));
+    router.post('/security/reset_staff_passwords', mw.authAdminApi, http(api.security.resetStaffPasswords));
 
     // ## Images
     router.post('/images/upload',

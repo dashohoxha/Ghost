@@ -29,4 +29,17 @@ test.describe('Ghost Admin - Danger Zone security actions', () => {
 
         await expect(page.getByText(/API key.* rotated\./i)).toBeVisible();
     });
+
+    test('reset staff passwords button - URL confirmation gates the action', async ({page}) => {
+        const settingsPage = new SettingsPage(page);
+        await settingsPage.dangerZoneSection.goto();
+
+        await expect(settingsPage.dangerZoneSection.resetStaffPasswordsButton).toBeVisible();
+
+        await settingsPage.dangerZoneSection.openResetStaffPasswordsModal();
+        await expect(settingsPage.dangerZoneSection.urlConfirmationOkButton).toBeDisabled();
+
+        await settingsPage.dangerZoneSection.typeConfirmation('wrong-value');
+        await expect(settingsPage.dangerZoneSection.urlConfirmationOkButton).toBeDisabled();
+    });
 });

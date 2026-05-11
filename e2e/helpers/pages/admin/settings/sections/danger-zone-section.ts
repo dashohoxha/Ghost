@@ -6,6 +6,7 @@ export class DangerZoneSection extends BasePage {
     readonly heading: Locator;
 
     readonly rotateApiKeysButton: Locator;
+    readonly resetStaffPasswordsButton: Locator;
     readonly deleteAllContentButton: Locator;
 
     readonly urlConfirmationModal: Locator;
@@ -19,6 +20,7 @@ export class DangerZoneSection extends BasePage {
         this.heading = page.getByRole('heading', {level: 5, name: 'Danger zone'});
 
         this.rotateApiKeysButton = page.getByTestId('rotate-api-keys-button');
+        this.resetStaffPasswordsButton = page.getByTestId('reset-staff-passwords-button');
         this.deleteAllContentButton = page.getByRole('button', {name: 'Delete all content'});
 
         this.urlConfirmationModal = page.getByTestId('url-confirmation-modal');
@@ -28,6 +30,11 @@ export class DangerZoneSection extends BasePage {
 
     async openRotateApiKeysModal() {
         await this.rotateApiKeysButton.click();
+        await this.urlConfirmationModal.waitFor({state: 'visible'});
+    }
+
+    async openResetStaffPasswordsModal() {
+        await this.resetStaffPasswordsButton.click();
         await this.urlConfirmationModal.waitFor({state: 'visible'});
     }
 
