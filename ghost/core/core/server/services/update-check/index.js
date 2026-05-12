@@ -34,8 +34,10 @@ module.exports = async ({
         }
     }
 
-    const {GhostMailer} = require('../mail');
+    const mail = require('../mail');
+    const {GhostMailer} = mail;
     const ghostMailer = new GhostMailer();
+    const i18n = require('../i18n');
 
     const updateChecker = new UpdateCheckService({
         api: {
@@ -66,7 +68,9 @@ module.exports = async ({
             rethrowErrors
         },
         request,
-        sendEmail: ghostMailer.send.bind(ghostMailer)
+        sendEmail: ghostMailer.send.bind(ghostMailer),
+        generateEmailContent: mail.utils.generateContent,
+        t: typeof i18n.t === 'function' ? i18n.t.bind(i18n) : undefined
     });
 
     await updateChecker.check();

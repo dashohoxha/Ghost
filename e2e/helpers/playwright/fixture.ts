@@ -4,6 +4,7 @@ import {Browser, BrowserContext, Page, TestInfo, test as base} from '@playwright
 import {EmailClient, MailPit} from '@/helpers/services/email/mail-pit';
 import {FakeMailgunServer, MailgunTestService} from '@/helpers/services/mailgun';
 import {FakeStripeServer, StripeTestService, WebhookClient} from '@/helpers/services/stripe';
+import {FakeUpdateCheckServer} from '@/helpers/services/update-check';
 import {GhostInstance, getEnvironmentManager} from '@/helpers/environment';
 import {SettingsService} from '@/helpers/services/settings/settings-service';
 import {faker} from '@faker-js/faker';
@@ -94,6 +95,11 @@ export interface GhostInstanceFixture {
     mailgunEnabled?: boolean;
     mailgunServer?: FakeMailgunServer;
     mailgun?: MailgunTestService;
+    // Forces per-test isolation because Ghost boots against a per-test fake
+    // update-check server. Enabling this also sets `updateCheck.forceUpdate`
+    // so Ghost ignores its NODE_ENV/next_update_check gating.
+    updateCheckEnabled?: boolean;
+    updateCheckServer?: FakeUpdateCheckServer;
     emailClient: EmailClient;
     ghostAccountOwner: User;
     pageWithAuthenticatedUser: {
@@ -205,12 +211,13 @@ export const test = base.extend<GhostInstanceFixture & InternalFixtures, WorkerF
         auto: true
     }],
 
-    _testEnvironmentContext: async ({config, isolation, labs, stripeEnabled, stripeServer, mailgunEnabled, mailgunServer}, use, testInfo: TestInfo) => {
+    _testEnvironmentContext: async ({config, isolation, labs, stripeEnabled, stripeServer, mailgunEnabled, mailgunServer, updateCheckEnabled, updateCheckServer}, use, testInfo: TestInfo) => {
         const environmentManager = await getEnvironmentManager();
         const requestedIsolation = getResolvedIsolation(testInfo, isolation);
-        // Stripe-enabled tests boot Ghost against a per-test fake Stripe server,
-        // so they cannot safely participate in per-file environment reuse.
-        const resolvedIsolation = stripeEnabled ? 'per-test' : requestedIsolation;
+        // Stripe-enabled and update-check-enabled tests boot Ghost against a
+        // per-test fake server, so they cannot safely participate in per-file
+        // environment reuse.
+        const resolvedIsolation = (stripeEnabled || updateCheckEnabled) ? 'per-test' : requestedIsolation;
         const suiteKey = getSuiteKey(testInfo);
         const stripeConfig = stripeEnabled && stripeServer ? {
             STRIPE_API_HOST: 'host.docker.internal',
@@ -222,7 +229,11 @@ export const test = base.extend<GhostInstanceFixture & InternalFixtures, WorkerF
             bulkEmail__mailgun__domain: 'fake.mailgun.test',
             bulkEmail__mailgun__baseUrl: `http://host.docker.internal:${mailgunServer.port}/v3`
         } : {};
-        const mergedConfig = {...(config || {}), ...stripeConfig, ...mailgunConfig};
+        const updateCheckConfig = updateCheckEnabled && updateCheckServer ? {
+            updateCheck__url: `http://host.docker.internal:${updateCheckServer.port}/`,
+            updateCheck__forceUpdate: 'true'
+        } : {};
+        const mergedConfig = {...(config || {}), ...stripeConfig, ...mailgunConfig, ...updateCheckConfig};
         const stripe = stripeServer ? {
             secretKey: STRIPE_SECRET_KEY,
             publishableKey: STRIPE_PUBLISHABLE_KEY
@@ -334,6 +345,7 @@ export const test = base.extend<GhostInstanceFixture & InternalFixtures, WorkerF
     labs: [undefined, {option: true}],
     stripeEnabled: [false, {option: true}],
     mailgunEnabled: [false, {option: true}],
+    updateCheckEnabled: [false, {option: true}],
 
     stripeServer: async ({stripeEnabled}, use) => {
         if (!stripeEnabled) {
@@ -375,6 +387,22 @@ export const test = base.extend<GhostInstanceFixture & InternalFixtures, WorkerF
 
         const service = new MailgunTestService(mailgunServer);
         await use(service);
+    },
+
+    updateCheckServer: async ({updateCheckEnabled}, use) => {
+        if (!updateCheckEnabled) {
+            await use(undefined);
+            return;
+        }
+
+        const server = new FakeUpdateCheckServer();
+        await server.start();
+        debug('Fake update-check server started on port', server.port);
+
+        await use(server);
+
+        await server.stop();
+        debug('Fake update-check server stopped');
     },
 
     emailClient: async ({}, use) => {

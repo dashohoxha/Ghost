@@ -11,6 +11,65 @@ const debug = require('@tryghost/debug')('update-check');
 
 const internal = {context: {internal: true}};
 
+// Documentation URL used as the default action CTA when the update-check
+// service does not supply one.
+const DEFAULT_UPGRADE_URL = 'https://ghost.org/docs/update/';
+
+function isSafeHttpUrl(value) {
+    if (typeof value !== 'string' || value === '') {
+        return false;
+    }
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch (err) {
+        return false;
+    }
+}
+
+// Normalises a raw upstream message into a fully-formed, validated shape that
+// downstream code (notification storage + email rendering) can consume without
+// further defaulting. Defensive against malformed or partial responses from
+// the (external, closed-source) update-check service.
+function normalizeMessage(raw) {
+    return {
+        id: raw.id,
+        content: raw.content,
+        status: raw.status || 'alert',
+        type: raw.type || 'info',
+        top: !!raw.top,
+        dismissible: Object.prototype.hasOwnProperty.call(raw, 'dismissible') ? raw.dismissible : true,
+        severity: raw.severity || 'critical',
+        actionUrl: isSafeHttpUrl(raw.action_url) ? raw.action_url : DEFAULT_UPGRADE_URL
+    };
+}
+
+// The upstream service signals criticality via `type === 'alert'` despite the
+// field being named `type`. This predicate is the single place that knows the
+// wire vocabulary; future signals (e.g. an explicit `critical: true` field)
+// can be added here without touching consumers.
+function isCriticalAlert(message) {
+    return message.type === 'alert';
+}
+
+// Translatable copy for the critical-update email. Kept separate from runtime
+// data so changes to wording don't have to wade through dynamic values.
+function criticalAlertCopy(t) {
+    return {
+        title: t('A critical security update is available for your Ghost site'),
+        headline: t('A critical update is available'),
+        intro: t('A new version of Ghost is available that resolves a security issue. We recommend upgrading your site as soon as possible.'),
+        siteLabel: t('Site:'),
+        currentVersionLabel: t('Current version:'),
+        severityLabel: t('Severity:'),
+        actionDescription: t('Follow the upgrade guide below to bring your site up to date. The guide covers self-hosted and Ghost(Pro) sites.'),
+        actionCta: t('View upgrade guide'),
+        linkFallback: t('If the button above does not work, copy and paste this link into your browser:'),
+        closing: t('If you have questions or run into trouble, the Ghost team and community are here to help.'),
+        footer: t('This email was sent from')
+    };
+}
+
 const messages = {
     checkingForUpdatesFailedError: 'Checking for updates failed, your site will continue to function.',
     checkingForUpdatesFailedHelp: 'If you get this error repeatedly, please seek help from {url}'
@@ -51,13 +110,19 @@ class UpdateCheckService {
      * @param {string} options.config.ghostVersion - Ghost instance version
      * @param {Function} options.request - a HTTP request proxy function
      * @param {Function} options.sendEmail - function handling sending an email
+     * @param {Function} [options.generateEmailContent] - function that renders an email template to {html, text}
+     * @param {Function} [options.t] - i18n translator (defaults to identity / passthrough)
     */
-    constructor({api, config, request, sendEmail}) {
+    constructor({api, config, request, sendEmail, generateEmailContent, t}) {
         this.api = api;
         this.config = config;
         this.logging = logging;
         this.request = request;
         this.sendEmail = sendEmail;
+        this.generateEmailContent = generateEmailContent;
+        // Default translator is passthrough so this service stays trivially testable
+        // without pulling the i18n service into unit tests.
+        this.t = typeof t === 'function' ? t : (string => string);
     }
 
     nextCheckTimestamp() {
@@ -327,28 +392,25 @@ class UpdateCheckService {
 
         const siteUrl = this.config.siteUrl;
 
-        for (const message of notification.messages) {
+        for (const rawMessage of notification.messages) {
+            const message = normalizeMessage(rawMessage);
+
             const toAdd = {
                 // @NOTE: the update check service returns "0" or "1" (https://github.com/TryGhost/UpdateCheck/issues/43)
                 custom: !!notification.custom,
                 createdAt: moment(notification.created_at).toDate(),
-                status: message.status || 'alert',
-                type: message.type || 'info',
+                status: message.status,
+                type: message.type,
                 id: message.id,
-                dismissible: Object.prototype.hasOwnProperty.call(message, 'dismissible') ? message.dismissible : true,
-                top: !!message.top,
+                dismissible: message.dismissible,
+                top: message.top,
                 message: message.content
             };
 
-            if (toAdd.type === 'alert') {
+            if (isCriticalAlert(message)) {
                 for (const email of adminEmails) {
                     try {
-                        this.sendEmail({
-                            to: email,
-                            subject: `Action required: Critical alert from Ghost instance ${siteUrl}`,
-                            html: toAdd.message,
-                            forceTextContent: true
-                        });
+                        await this.sendCriticalAlertEmail({to: email, message, siteUrl});
                     } catch (err) {
                         this.logging.error(err);
                         if (this.config.rethrowErrors) {
@@ -362,6 +424,35 @@ class UpdateCheckService {
             await this.api.notifications.add({notifications: [toAdd]}, {context: {internal: true}});
         }
     }
+
+    /**
+     * Render and dispatch the critical-update email for a single admin user.
+     * Expects `message` to have been passed through {@link normalizeMessage}
+     * upstream so all fields are validated and defaulted.
+     *
+     * @param {Object} options
+     * @param {string} options.to - recipient email address
+     * @param {Object} options.message - normalized message
+     * @param {string} options.siteUrl - the site URL
+     * @returns {Promise<void>}
+     */
+    async sendCriticalAlertEmail({to, message, siteUrl}) {
+        const data = this.buildCriticalAlertEmailData({message, siteUrl, recipientEmail: to});
+        const {html, text} = await this.generateEmailContent({template: 'critical-update', data});
+        await this.sendEmail({to, subject: data.title, html, ...(text ? {text} : {})});
+    }
+
+    buildCriticalAlertEmailData({message, siteUrl, recipientEmail}) {
+        return {
+            ...criticalAlertCopy(this.t),
+            severity: message.severity,
+            currentVersion: this.config.ghostVersion || '',
+            actionUrl: message.actionUrl,
+            siteUrl,
+            recipientEmail
+        };
+    }
+
     /**
      * @description Entry point to trigger the update check unit.
      *
@@ -392,3 +483,5 @@ class UpdateCheckService {
 }
 
 module.exports = UpdateCheckService;
+module.exports.normalizeMessage = normalizeMessage;
+module.exports.isCriticalAlert = isCriticalAlert;

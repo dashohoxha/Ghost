@@ -363,9 +363,12 @@ describe('Update Check', function () {
 
             sinon.assert.called(sendEmailStub);
             assert.equal(sendEmailStub.args[0][0].to, 'jbloggs@example.com');
-            assert.equal(sendEmailStub.args[0][0].subject, 'Action required: Critical alert from Ghost instance http://127.0.0.1:2369');
-            assert.equal(sendEmailStub.args[0][0].html, '<p>Critical message. Upgrade your site!</p>');
-            assert.equal(sendEmailStub.args[0][0].forceTextContent, true);
+            assert.equal(sendEmailStub.args[0][0].subject, 'A critical security update is available for your Ghost site');
+            // We now send fully rendered HTML, not the raw plaintext message body.
+            assert.notEqual(sendEmailStub.args[0][0].html, '<p>Critical message. Upgrade your site!</p>');
+            assert.match(sendEmailStub.args[0][0].html, /critical update is available/i);
+            assert.match(sendEmailStub.args[0][0].html, /https:\/\/ghost\.org\/docs\/update\//);
+            assert.equal(sendEmailStub.args[0][0].forceTextContent, undefined);
 
             sinon.assert.calledOnce(notificationsAPIAddStub);
             assert.equal(notificationsAPIAddStub.args[0][0].notifications.length, 1);
@@ -417,6 +420,179 @@ describe('Update Check', function () {
             await updateCheckService.check();
 
             sinon.assert.notCalled(notificationsAPIAddStub);
+        });
+    });
+
+    describe('sendCriticalAlertEmail', function () {
+        function buildService({sendEmail, generateEmailContent, t, config} = {}) {
+            return new UpdateCheckService({
+                api: {
+                    settings: {read: settingsStub, edit: settingsStub},
+                    users: {browse: sinon.stub().resolves()},
+                    posts: {browse: sinon.stub().resolves()},
+                    notifications: {add: sinon.stub().resolves()}
+                },
+                config: Object.assign({
+                    ghostVersion: '5.99.0',
+                    siteUrl: 'http://127.0.0.1:2369'
+                }, config || {}),
+                request: requestStub,
+                sendEmail: sendEmail || sinon.stub().resolves(),
+                generateEmailContent: generateEmailContent,
+                t: t
+            });
+        }
+
+        const normalizedMessage = {
+            id: 'msg-1',
+            content: '<p>A critical security update is available</p>',
+            status: 'alert',
+            type: 'alert',
+            top: true,
+            dismissible: false,
+            severity: 'high',
+            actionUrl: 'https://example.com/upgrade'
+        };
+
+        it('renders the critical-update template with all variables', async function () {
+            const generateEmailContent = sinon.stub().resolves({
+                html: '<html>rendered</html>',
+                text: 'plain text'
+            });
+            const sendEmail = sinon.stub().resolves();
+
+            const svc = buildService({sendEmail, generateEmailContent});
+
+            await svc.sendCriticalAlertEmail({
+                to: 'owner@example.com',
+                message: normalizedMessage,
+                siteUrl: 'http://127.0.0.1:2369'
+            });
+
+            sinon.assert.calledOnce(generateEmailContent);
+            const renderArgs = generateEmailContent.args[0][0];
+            assert.equal(renderArgs.template, 'critical-update');
+            assert.equal(renderArgs.data.severity, 'high');
+            assert.equal(renderArgs.data.currentVersion, '5.99.0');
+            assert.equal(renderArgs.data.siteUrl, 'http://127.0.0.1:2369');
+            assert.equal(renderArgs.data.actionUrl, 'https://example.com/upgrade');
+            assert.equal(renderArgs.data.recipientEmail, 'owner@example.com');
+            assert.equal(typeof renderArgs.data.headline, 'string');
+            assert.equal(typeof renderArgs.data.intro, 'string');
+            assert.equal(typeof renderArgs.data.actionCta, 'string');
+            assert.equal(typeof renderArgs.data.title, 'string');
+        });
+
+        it('sends the rendered HTML and text via sendEmail', async function () {
+            const generateEmailContent = sinon.stub().resolves({
+                html: '<html>rendered</html>',
+                text: 'plain text'
+            });
+            const sendEmail = sinon.stub().resolves();
+
+            const svc = buildService({sendEmail, generateEmailContent});
+
+            await svc.sendCriticalAlertEmail({
+                to: 'owner@example.com',
+                message: normalizedMessage,
+                siteUrl: 'http://127.0.0.1:2369'
+            });
+
+            sinon.assert.calledOnce(sendEmail);
+            const sentMessage = sendEmail.args[0][0];
+            assert.equal(sentMessage.to, 'owner@example.com');
+            assert.equal(sentMessage.subject, 'A critical security update is available for your Ghost site');
+            assert.equal(sentMessage.html, '<html>rendered</html>');
+            assert.equal(sentMessage.text, 'plain text');
+            // Critically: we no longer set forceTextContent so the HTML body
+            // reaches the mailbox instead of being stripped.
+            assert.equal(sentMessage.forceTextContent, undefined);
+        });
+
+        it('passes strings through the supplied translator', async function () {
+            const generateEmailContent = sinon.stub().resolves({html: 'x', text: 'x'});
+            const sendEmail = sinon.stub().resolves();
+            const t = sinon.stub().callsFake(input => `T:${input}`);
+
+            const svc = buildService({sendEmail, generateEmailContent, t});
+
+            await svc.sendCriticalAlertEmail({
+                to: 'owner@example.com',
+                message: normalizedMessage,
+                siteUrl: 'http://127.0.0.1:2369'
+            });
+
+            const renderArgs = generateEmailContent.args[0][0];
+            assert.equal(renderArgs.data.headline, 'T:A critical update is available');
+            assert.equal(renderArgs.data.actionCta, 'T:View upgrade guide');
+            assert.equal(sendEmail.args[0][0].subject, 'T:A critical security update is available for your Ghost site');
+            sinon.assert.called(t);
+        });
+    });
+
+    describe('normalizeMessage', function () {
+        const {normalizeMessage} = UpdateCheckService;
+
+        it('applies defaults to a sparse message', function () {
+            const message = normalizeMessage({id: 'm-1', content: 'hello'});
+
+            assert.equal(message.id, 'm-1');
+            assert.equal(message.content, 'hello');
+            assert.equal(message.status, 'alert');
+            assert.equal(message.type, 'info');
+            assert.equal(message.top, false);
+            assert.equal(message.dismissible, true);
+            assert.equal(message.severity, 'critical');
+            assert.equal(message.actionUrl, 'https://ghost.org/docs/update/');
+        });
+
+        it('preserves provided values', function () {
+            const message = normalizeMessage({
+                id: 'm-2',
+                content: 'x',
+                status: 'notification',
+                type: 'alert',
+                top: true,
+                dismissible: false,
+                severity: 'high',
+                action_url: 'https://example.com/upgrade'
+            });
+
+            assert.equal(message.status, 'notification');
+            assert.equal(message.type, 'alert');
+            assert.equal(message.top, true);
+            assert.equal(message.dismissible, false);
+            assert.equal(message.severity, 'high');
+            assert.equal(message.actionUrl, 'https://example.com/upgrade');
+        });
+
+        it('replaces non-http(s) action_url with the default upgrade URL', function () {
+            const message = normalizeMessage({
+                id: 'm-3',
+                action_url: 'javascript:alert(1)'
+            });
+
+            assert.equal(message.actionUrl, 'https://ghost.org/docs/update/');
+        });
+
+        it('honors an explicit dismissible:false', function () {
+            const message = normalizeMessage({id: 'm-4', dismissible: false});
+
+            assert.equal(message.dismissible, false);
+        });
+    });
+
+    describe('isCriticalAlert', function () {
+        const {isCriticalAlert, normalizeMessage} = UpdateCheckService;
+
+        it('is true when the upstream type is alert', function () {
+            assert.equal(isCriticalAlert(normalizeMessage({id: 'm', type: 'alert'})), true);
+        });
+
+        it('is false for any other type', function () {
+            assert.equal(isCriticalAlert(normalizeMessage({id: 'm', type: 'info'})), false);
+            assert.equal(isCriticalAlert(normalizeMessage({id: 'm', type: 'warn'})), false);
+            assert.equal(isCriticalAlert(normalizeMessage({id: 'm'})), false);
         });
     });
 
