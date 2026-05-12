@@ -146,10 +146,22 @@ export default class SessionService extends ESASessionService {
     loadServerNotifications() {
         if (this.isAuthenticated) {
             if (!this.user.isAuthorOrContributor) {
+                // When running inside the React admin shell, the React
+                // notification banner (apps/admin/src/layout/notification-banner.tsx)
+                // owns rendering of top/custom server notifications. Skip
+                // loading them into the Ember `notifications` service here to
+                // avoid a double render in the `#ember-notifications-wormhole`.
+                // The release-notification upgrade flow stays Ember-driven
+                // until that surface is migrated separately.
+                const isReactAdmin = typeof document !== 'undefined'
+                    && document.body?.classList?.contains('react-admin');
+
                 this.dataStore.findAll('notification', {reload: true}).then((serverNotifications) => {
                     serverNotifications.forEach((notification) => {
                         if (notification.top || notification.custom) {
-                            this.notifications.handleNotification(notification);
+                            if (!isReactAdmin) {
+                                this.notifications.handleNotification(notification);
+                            }
                         } else {
                             this.upgradeStatus.handleUpgradeNotification(notification);
                         }
